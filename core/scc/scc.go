@@ -44,7 +44,7 @@ func (bccs BuiltinSCCs) IsSysCC(name string) bool {
 // A ChaincodeStreamHandler is responsible for handling the ChaincodeStream
 // communication between a per and chaincode.
 type ChaincodeStreamHandler interface {
-	HandleChaincodeStream(ccintf.ChaincodeStream) error
+	HandleChaincodeStream([]ccintf.ChaincodeStream) error
 	LaunchInProc(packageID string) <-chan struct{}
 }
 
@@ -72,7 +72,9 @@ func DeploySysCC(sysCC SelfDescribingSysCC, chaincodeStreamHandler ChaincodeStre
 		defer stream.CloseSend()
 
 		sysccLogger.Debugf("starting chaincode-support stream for  %s", ccid)
-		err := chaincodeStreamHandler.HandleChaincodeStream(stream)
+		//binhnt:
+		streams := []ccintf.ChaincodeStream{stream}
+		err := chaincodeStreamHandler.HandleChaincodeStream(streams)
 		sysccLogger.Criticalf("shim stream ended with err: %v", err)
 	}()
 

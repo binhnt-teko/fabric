@@ -20,6 +20,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/mock"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
+	"github.com/hyperledger/fabric/core/container/ccintf"
 	"github.com/hyperledger/fabric/core/scc"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -125,7 +126,7 @@ var _ = Describe("Handler", func() {
 			AppConfig: fakeApplicationConfigRetriever,
 			Metrics:   chaincodeMetrics,
 		}
-		chaincode.SetHandlerChatStream(handler, fakeChatStream)
+		chaincode.SetHandlerChatStream(handler, []ccintf.ChaincodeStream{fakeChatStream})
 		chaincode.SetHandlerChaincodeID(handler, "test-handler-name:1.0")
 	})
 
@@ -2728,7 +2729,7 @@ var _ = Describe("Handler", func() {
 
 		It("receives messages until an error is received", func() {
 			fakeChatStream.RecvReturnsOnCall(99, nil, errors.New("done-for-now"))
-			handler.ProcessStream(fakeChatStream)
+			handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream})
 
 			Eventually(fakeChatStream.RecvCallCount).Should(Equal(100))
 		})
@@ -2739,7 +2740,7 @@ var _ = Describe("Handler", func() {
 				<-releaseChan
 				return nil, errors.New("cc-went-away")
 			}
-			go handler.ProcessStream(fakeChatStream)
+			go handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream})
 			Eventually(fakeChatStream.RecvCallCount).Should(Equal(1))
 
 			streamDoneChan := chaincode.StreamDone(handler)
@@ -2755,7 +2756,7 @@ var _ = Describe("Handler", func() {
 			})
 
 			It("returns the error", func() {
-				err := handler.ProcessStream(fakeChatStream)
+				err := handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream})
 				Expect(err).To(Equal(io.EOF))
 			})
 		})
@@ -2766,7 +2767,7 @@ var _ = Describe("Handler", func() {
 			})
 
 			It("returns an error", func() {
-				err := handler.ProcessStream(fakeChatStream)
+				err := handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream})
 				Expect(err).To(MatchError("receive from chaincode support stream failed: chocolate"))
 			})
 		})
@@ -2777,7 +2778,7 @@ var _ = Describe("Handler", func() {
 			})
 
 			It("returns an error", func() {
-				err := handler.ProcessStream(fakeChatStream)
+				err := handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream})
 				Expect(err).To(MatchError("received nil message, ending chaincode support stream"))
 			})
 		})
@@ -2797,7 +2798,7 @@ var _ = Describe("Handler", func() {
 
 			It("sends a keep alive messages until the stream ends", func() {
 				errChan := make(chan error, 1)
-				go func() { errChan <- handler.ProcessStream(fakeChatStream) }()
+				go func() { errChan <- handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream}) }()
 
 				Eventually(fakeChatStream.SendCallCount).Should(Equal(5))
 				recvChan <- nil
@@ -2816,7 +2817,7 @@ var _ = Describe("Handler", func() {
 
 				It("does not send keep alive messages", func() {
 					errChan := make(chan error, 1)
-					go func() { errChan <- handler.ProcessStream(fakeChatStream) }()
+					go func() { errChan <- handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream}) }()
 
 					Consistently(fakeChatStream.SendCallCount).Should(Equal(0))
 					recvChan <- nil
@@ -2842,7 +2843,7 @@ var _ = Describe("Handler", func() {
 			})
 
 			It("returns an error", func() {
-				err := handler.ProcessStream(fakeChatStream)
+				err := handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream})
 				Expect(err).To(MatchError("error handling message, ending stream: [tx-id] Fabric side handler cannot handle message (9999) while in created state"))
 			})
 		})
@@ -2880,7 +2881,7 @@ var _ = Describe("Handler", func() {
 
 			It("returns an error", func() {
 				errChan := make(chan error, 1)
-				go func() { errChan <- handler.ProcessStream(fakeChatStream) }()
+				go func() { errChan <- handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream}) }()
 				Eventually(fakeChatStream.RecvCallCount).ShouldNot(Equal(0))                                          // wait for loop to start
 				handler.Execute(&ccprovider.TransactionParams{}, "chaincode-name", incomingMessage, time.Millisecond) // force async error
 
@@ -2889,7 +2890,7 @@ var _ = Describe("Handler", func() {
 
 			It("stops receiving messages", func() {
 				errChan := make(chan error, 1)
-				go func() { errChan <- handler.ProcessStream(fakeChatStream) }()
+				go func() { errChan <- handler.ProcessStream([]ccintf.ChaincodeStream{fakeChatStream}) }()
 				Eventually(fakeChatStream.RecvCallCount).ShouldNot(Equal(0))                                          // wait for loop to start
 				handler.Execute(&ccprovider.TransactionParams{}, "chaincode-name", incomingMessage, time.Millisecond) // force async error
 

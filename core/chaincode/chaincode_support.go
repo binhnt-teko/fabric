@@ -106,7 +106,7 @@ func (cs *ChaincodeSupport) LaunchInProc(ccid string) <-chan struct{} {
 }
 
 // HandleChaincodeStream implements ccintf.HandleChaincodeStream for all vms to call with appropriate stream
-func (cs *ChaincodeSupport) HandleChaincodeStream(stream ccintf.ChaincodeStream) error {
+func (cs *ChaincodeSupport) HandleChaincodeStream(stream []ccintf.ChaincodeStream) error {
 	var deserializerFactory privdata.IdentityDeserializerFactoryFunc = func(channelID string) msp.IdentityDeserializer {
 		return cs.Peer.Channel(channelID).MSPManager()
 	}
@@ -133,7 +133,10 @@ func (cs *ChaincodeSupport) HandleChaincodeStream(stream ccintf.ChaincodeStream)
 
 // Register the bidi stream entry point called by chaincode to register with the Peer.
 func (cs *ChaincodeSupport) Register(stream pb.ChaincodeSupport_RegisterServer) error {
-	return cs.HandleChaincodeStream(stream)
+
+	//binhnt: Add to multi stream
+	streams := []ccintf.ChaincodeStream{stream}
+	return cs.HandleChaincodeStream(streams)
 }
 
 // ExecuteLegacyInit is a temporary method which should be removed once the old style lifecycle

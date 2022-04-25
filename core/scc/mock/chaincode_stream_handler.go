@@ -8,7 +8,7 @@ import (
 )
 
 type ChaincodeStreamHandler struct {
-	HandleChaincodeStreamStub        func(ccintf.ChaincodeStream) error
+	HandleChaincodeStreamStub        func([]ccintf.ChaincodeStream) error
 	handleChaincodeStreamMutex       sync.RWMutex
 	handleChaincodeStreamArgsForCall []struct {
 		arg1 ccintf.ChaincodeStream
@@ -34,12 +34,12 @@ type ChaincodeStreamHandler struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *ChaincodeStreamHandler) HandleChaincodeStream(arg1 ccintf.ChaincodeStream) error {
+func (fake *ChaincodeStreamHandler) HandleChaincodeStream(arg1 []ccintf.ChaincodeStream) error {
 	fake.handleChaincodeStreamMutex.Lock()
 	ret, specificReturn := fake.handleChaincodeStreamReturnsOnCall[len(fake.handleChaincodeStreamArgsForCall)]
 	fake.handleChaincodeStreamArgsForCall = append(fake.handleChaincodeStreamArgsForCall, struct {
 		arg1 ccintf.ChaincodeStream
-	}{arg1})
+	}{arg1[0]})
 	fake.recordInvocation("HandleChaincodeStream", []interface{}{arg1})
 	fake.handleChaincodeStreamMutex.Unlock()
 	if fake.HandleChaincodeStreamStub != nil {
@@ -58,7 +58,7 @@ func (fake *ChaincodeStreamHandler) HandleChaincodeStreamCallCount() int {
 	return len(fake.handleChaincodeStreamArgsForCall)
 }
 
-func (fake *ChaincodeStreamHandler) HandleChaincodeStreamCalls(stub func(ccintf.ChaincodeStream) error) {
+func (fake *ChaincodeStreamHandler) HandleChaincodeStreamCalls(stub func([]ccintf.ChaincodeStream) error) {
 	fake.handleChaincodeStreamMutex.Lock()
 	defer fake.handleChaincodeStreamMutex.Unlock()
 	fake.HandleChaincodeStreamStub = stub

@@ -399,7 +399,7 @@ func startCC(t *testing.T, channelID string, ccname string, chaincodeSupport *Ch
 
 	// register peer side with ccsupport
 	go func() {
-		chaincodeSupport.HandleChaincodeStream(peerSide)
+		chaincodeSupport.HandleChaincodeStream([]ccintf.ChaincodeStream{peerSide})
 	}()
 
 	done := setuperror()

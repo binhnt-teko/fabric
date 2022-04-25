@@ -16,7 +16,7 @@ func SetHandlerChaincodeID(h *Handler, chaincodeID string) {
 	h.chaincodeID = chaincodeID
 }
 
-func SetHandlerChatStream(h *Handler, chatStream ccintf.ChaincodeStream) {
+func SetHandlerChatStream(h *Handler, chatStream []ccintf.ChaincodeStream) {
 	h.chatStream = chatStream
 }
 

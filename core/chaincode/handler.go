@@ -137,13 +137,17 @@ type Handler struct {
 	// chaincodeID holds the ID of the chaincode that registered with the peer.
 	chaincodeID string
 
+	//Binhnt: Current StreamId
+	streamIndex int
 	// serialLock is used to serialize sends across the grpc chat stream.
-	serialLock sync.Mutex
+	serialLock []sync.Mutex
+
 	// chatStream is the bidirectional grpc stream used to communicate with the
 	// chaincode instance.
-	chatStream ccintf.ChaincodeStream
+	chatStream []ccintf.ChaincodeStream
 	// errChan is used to communicate errors from the async send to the receive loop
 	errChan chan error
+
 	// mutex is used to serialze the stream closed chan.
 	mutex sync.Mutex
 	// streamDoneChan is closed when the chaincode stream terminates.
@@ -260,7 +264,8 @@ func (h *Handler) HandleTransaction(msg *pb.ChaincodeMessage, delegate handleFun
 
 	chaincodeLogger.Debugf("[%s] Completed %s. Sending %s", shorttxid(msg.Txid), msg.Type, resp.Type)
 	h.ActiveTransactions.Remove(msg.ChannelId, msg.Txid)
-	h.serialSendAsync(resp)
+	index := h.GetStreamRR()
+	h.serialSendAsync(index, resp)
 
 	meterLabels = append(meterLabels, "success", strconv.FormatBool(resp.Type != pb.ChaincodeMessage_ERROR))
 	h.Metrics.ShimRequestDuration.With(meterLabels...).Observe(time.Since(startTime).Seconds())
@@ -293,9 +298,13 @@ func ParseName(ccName string) *sysccprovider.ChaincodeInstance {
 }
 
 // serialSend serializes msgs so gRPC will be happy
-func (h *Handler) serialSend(msg *pb.ChaincodeMessage) error {
-	h.serialLock.Lock()
-	defer h.serialLock.Unlock()
+func (h *Handler) serialSend(index int, msg *pb.ChaincodeMessage) error {
+	if index >= len(h.chatStream) || index < 0 {
+		return errors.New("Cannot find stream with index ")
+	}
+
+	h.serialLock[index].Lock()
+	defer h.serialLock[index].Unlock()
 	labels := []string{
 		"channel", msg.ChannelId,
 	}
@@ -308,7 +317,7 @@ func (h *Handler) serialSend(msg *pb.ChaincodeMessage) error {
 	}
 
 	startTime := time.Now()
-	if err := h.chatStream.Send(msg); err != nil {
+	if err := h.chatStream[index].Send(msg); err != nil {
 		err = errors.WithMessagef(err, "[%s] error sending %s", shorttxid(msg.Txid), msg.Type)
 		chaincodeLogger.Errorf("%+v", err)
 		return err
@@ -322,9 +331,9 @@ func (h *Handler) serialSend(msg *pb.ChaincodeMessage) error {
 // can be nonblocking. Only errors need to be handled and these are handled by
 // communication on supplied error channel. A typical use will be a non-blocking or
 // nil channel
-func (h *Handler) serialSendAsync(msg *pb.ChaincodeMessage) {
+func (h *Handler) serialSendAsync(index int, msg *pb.ChaincodeMessage) {
 	go func() {
-		if err := h.serialSend(msg); err != nil {
+		if err := h.serialSend(index, msg); err != nil {
 			// provide an error response to the caller
 			resp := &pb.ChaincodeMessage{
 				Type:      pb.ChaincodeMessage_ERROR,
@@ -371,17 +380,39 @@ func (h *Handler) streamDone() <-chan struct{} {
 	return h.streamDoneChan
 }
 
-func (h *Handler) ProcessStream(stream ccintf.ChaincodeStream) error {
+func (h *Handler) ProcessStream(streams []ccintf.ChaincodeStream) error {
 	defer h.deregister()
 
-	h.mutex.Lock()
-	h.streamDoneChan = make(chan struct{})
-	h.mutex.Unlock()
-	defer close(h.streamDoneChan)
-
-	h.chatStream = stream
+	h.chatStream = streams
 	h.errChan = make(chan error, 1)
 
+	//Binhnt: start multi thread to process request from chaincode
+	// wg := sync.WaitGroup{}
+	h.streamIndex = 0
+	h.serialLock = make([]sync.Mutex, len(h.chatStream))
+	for index, stream := range h.chatStream {
+		h.serialLock[index] = sync.Mutex{} //Init lock for each stream
+		// wg.Add(1)
+		go func(index int, stream ccintf.ChaincodeStream) error {
+			// defer wg.Done()
+			return h.ProcessOneStream(index, stream)
+		}(index, stream)
+	}
+	// wg.Wait()
+	return nil
+}
+
+//Binhnt: Create round-robit stream
+func (h *Handler) GetStreamRR() int {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.streamIndex++
+	if h.streamIndex >= len(h.chatStream) {
+		h.streamIndex = 0
+	}
+	return h.streamIndex
+}
+func (h *Handler) ProcessOneStream(index int, stream ccintf.ChaincodeStream) error {
 	var keepaliveCh <-chan time.Time
 	if h.Keepalive != 0 {
 		ticker := time.NewTicker(h.Keepalive)
@@ -394,10 +425,11 @@ func (h *Handler) ProcessStream(stream ccintf.ChaincodeStream) error {
 		msg *pb.ChaincodeMessage
 		err error
 	}
+
 	msgAvail := make(chan *recvMsg, 1)
 
 	receiveMessage := func() {
-		in, err := h.chatStream.Recv()
+		in, err := stream.Recv()
 		msgAvail <- &recvMsg{in, err}
 	}
 
@@ -436,7 +468,7 @@ func (h *Handler) ProcessStream(stream ccintf.ChaincodeStream) error {
 		case <-keepaliveCh:
 			// if no error message from serialSend, KEEPALIVE happy, and don't care about error
 			// (maybe it'll work later)
-			h.serialSendAsync(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_KEEPALIVE})
+			h.serialSendAsync(index, &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_KEEPALIVE})
 			continue
 		}
 	}
@@ -448,7 +480,8 @@ func (h *Handler) sendReady() error {
 	ccMsg := &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_READY}
 
 	// if error in sending tear down the h
-	if err := h.serialSend(ccMsg); err != nil {
+	index := h.GetStreamRR()
+	if err := h.serialSend(index, ccMsg); err != nil {
 		chaincodeLogger.Errorf("error sending READY (%s) for chaincode %s", err, h.chaincodeID)
 		return err
 	}
@@ -502,7 +535,8 @@ func (h *Handler) HandleRegister(msg *pb.ChaincodeMessage) {
 	}
 
 	chaincodeLogger.Debugf("Got %s for chaincodeID = %s, sending back %s", pb.ChaincodeMessage_REGISTER, h.chaincodeID, pb.ChaincodeMessage_REGISTERED)
-	if err := h.serialSend(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTERED}); err != nil {
+	index := h.GetStreamRR()
+	if err := h.serialSend(index, &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTERED}); err != nil {
 		chaincodeLogger.Errorf("error sending %s: %s", pb.ChaincodeMessage_REGISTERED, err)
 		h.notifyRegistry(err)
 		return
@@ -1220,7 +1254,8 @@ func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace stri
 		h.Metrics.ChaincodeProposalTransactionBeforeSendMap.Set(msg.Txid, start1)
 		h.Metrics.ChaincodeProposalTransactionCount.With(labels...).Add(1)
 	}
-	h.serialSendAsync(msg)
+	index := h.GetStreamRR()
+	h.serialSendAsync(index, msg)
 	var ccresp *pb.ChaincodeMessage
 	select {
 	case ccresp = <-txctx.ResponseNotifier:
