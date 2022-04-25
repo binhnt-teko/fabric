@@ -179,6 +179,7 @@ func (h *Handler) handleMessageCreatedState(msg *pb.ChaincodeMessage) error {
 }
 
 func (h *Handler) handleMessageReadyState(msg *pb.ChaincodeMessage) error {
+
 	switch msg.Type {
 	case pb.ChaincodeMessage_COMPLETED, pb.ChaincodeMessage_ERROR:
 		h.Notify(msg)
@@ -295,13 +296,24 @@ func ParseName(ccName string) *sysccprovider.ChaincodeInstance {
 func (h *Handler) serialSend(msg *pb.ChaincodeMessage) error {
 	h.serialLock.Lock()
 	defer h.serialLock.Unlock()
+	labels := []string{
+		"channel", msg.ChannelId,
+	}
+	if msg.Type == pb.ChaincodeMessage_TRANSACTION {
+		if val, ok := h.Metrics.ChaincodeProposalTransactionBeforeSendMap.Get(msg.Txid); ok {
+			startTime := val.(time.Time)
+			h.Metrics.ChaincodeProposalTransactionBeforeSend.With(labels...).Observe(time.Since(startTime).Seconds())
 
+		}
+	}
+
+	startTime := time.Now()
 	if err := h.chatStream.Send(msg); err != nil {
 		err = errors.WithMessagef(err, "[%s] error sending %s", shorttxid(msg.Txid), msg.Type)
 		chaincodeLogger.Errorf("%+v", err)
 		return err
 	}
-
+	h.Metrics.ChaincodeProposalTransactionSendTime.With(labels...).Observe(time.Since(startTime).Seconds())
 	return nil
 }
 
@@ -505,15 +517,29 @@ func (h *Handler) HandleRegister(msg *pb.ChaincodeMessage) {
 }
 
 func (h *Handler) Notify(msg *pb.ChaincodeMessage) {
+	labels := []string{
+		"channel", msg.ChannelId,
+	}
+	if val, ok := h.Metrics.ChaincodeProposalTransactionMap.Get(msg.Txid); ok {
+
+		startTime := val.(time.Time)
+		h.Metrics.ChaincodeProposalTransactionDuration.With(labels...).Observe(time.Since(startTime).Seconds())
+	}
+
+	startTime := time.Now()
 	tctx := h.TXContexts.Get(msg.ChannelId, msg.Txid)
 	if tctx == nil {
 		chaincodeLogger.Debugf("notifier Txid:%s, channelID:%s does not exist for handling message %s", msg.Txid, msg.ChannelId, msg.Type)
 		return
 	}
+	h.Metrics.ChaincodeProposalTransactionGetContext.With(labels...).Observe(time.Since(startTime).Seconds())
 
+	startTime = time.Now()
 	chaincodeLogger.Debugf("[%s] notifying Txid:%s, channelID:%s", shorttxid(msg.Txid), msg.Txid, msg.ChannelId)
 	tctx.ResponseNotifier <- msg
+
 	tctx.CloseQueryIterators()
+	h.Metrics.ChaincodeProposalTransactionClose.With(labels...).Observe(time.Since(startTime).Seconds())
 }
 
 // is this a txid for which there is a valid txsim
@@ -1160,9 +1186,14 @@ func (h *Handler) HandleInvokeChaincode(msg *pb.ChaincodeMessage, txContext *Tra
 }
 
 func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace string, msg *pb.ChaincodeMessage, timeout time.Duration) (*pb.ChaincodeMessage, error) {
+	start := time.Now()
+	meterLabels := []string{
+		"channel", txParams.ChannelID,
+	}
 	chaincodeLogger.Debugf("Entry")
 	defer chaincodeLogger.Debugf("Exit")
 
+	start1 := time.Now()
 	txParams.CollectionStore = h.getCollectionStore(msg.ChannelId)
 	txParams.IsInitTransaction = (msg.Type == pb.ChaincodeMessage_INIT)
 	txParams.NamespaceID = namespace
@@ -1177,19 +1208,33 @@ func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace stri
 		return nil, err
 	}
 
-	h.serialSendAsync(msg)
+	h.Metrics.ChaincodeProposalPrepare.With(meterLabels...).Observe(time.Since(start1).Seconds())
 
+	start1 = time.Now()
+
+	if msg.Type == pb.ChaincodeMessage_TRANSACTION {
+		labels := []string{
+			"channel", msg.ChannelId,
+		}
+		h.Metrics.ChaincodeProposalTransactionMap.Set(msg.Txid, start1)
+		h.Metrics.ChaincodeProposalTransactionBeforeSendMap.Set(msg.Txid, start1)
+		h.Metrics.ChaincodeProposalTransactionCount.With(labels...).Add(1)
+	}
+	h.serialSendAsync(msg)
 	var ccresp *pb.ChaincodeMessage
 	select {
 	case ccresp = <-txctx.ResponseNotifier:
 		// response is sent to user or calling chaincode. ChaincodeMessage_ERROR
 		// are typically treated as error
+		h.Metrics.ChaincodeProposalSend.With(meterLabels...).Observe(time.Since(start1).Seconds())
+
 	case <-time.After(timeout):
 		err = errors.New(ErrorExecutionTimeout)
 		h.Metrics.ExecuteTimeouts.With("chaincode", h.chaincodeID).Add(1)
 	case <-h.streamDone():
 		err = errors.New(ErrorStreamTerminated)
 	}
+	h.Metrics.ChaincodeProposal.With(meterLabels...).Observe(time.Since(start).Seconds())
 
 	return ccresp, err
 }

@@ -117,12 +117,13 @@ func (e *Endorser) callChaincode(txParams *ccprovider.TransactionParams, input *
 		"chaincode", chaincodeName,
 	}
 
+	start := time.Now()
 	res, ccevent, err := e.Support.Execute(txParams, chaincodeName, input)
 	if err != nil {
 		e.Metrics.SimulationFailure.With(meterLabels...).Add(1)
 		return nil, nil, err
 	}
-
+	e.Metrics.ProcessProposalExecuteChaincode.With(meterLabels...).Observe(time.Since(start).Seconds())
 	// per doc anything < 400 can be sent as TX.
 	// fabric errors will always be >= 400 (ie, unambiguous errors )
 	// "lscc" will respond with status 200 or 500 (ie, unambiguous OK or ERROR)
@@ -182,7 +183,7 @@ func (e *Endorser) simulateProposal(txParams *ccprovider.TransactionParams, chai
 		"channel", txParams.ChannelID,
 		"chaincode", chaincodeName,
 	}
-
+	start := time.Now()
 	// ---3. execute the proposal and get simulation results
 	res, ccevent, err := e.callChaincode(txParams, chaincodeInput, chaincodeName)
 	if err != nil {
@@ -193,6 +194,9 @@ func (e *Endorser) simulateProposal(txParams *ccprovider.TransactionParams, chai
 	if txParams.TXSimulator == nil {
 		return res, nil, ccevent, nil, nil
 	}
+	e.Metrics.ProcessProposalSimulateProposalCallChaincode.With(meterLabels...).Observe(time.Since(start).Seconds())
+
+	start = time.Now()
 
 	// Note, this is a little goofy, as if there is private data, Done() gets called
 	// early, so this is invoked multiple times, but that is how the code worked before
@@ -236,7 +240,9 @@ func (e *Endorser) simulateProposal(txParams *ccprovider.TransactionParams, chai
 			return nil, nil, nil, nil, err
 		}
 	}
+	e.Metrics.ProcessProposalSimulateProposalCheckResult.With(meterLabels...).Observe(time.Since(start).Seconds())
 
+	start = time.Now()
 	ccInterest, err := e.buildChaincodeInterest(simResult)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -247,6 +253,7 @@ func (e *Endorser) simulateProposal(txParams *ccprovider.TransactionParams, chai
 		e.Metrics.SimulationFailure.With(meterLabels...).Add(1)
 		return nil, nil, nil, nil, err
 	}
+	e.Metrics.ProcessProposalSimulateProposalReturnResult.With(meterLabels...).Observe(time.Since(start).Seconds())
 
 	return res, pubSimResBytes, ccevent, ccInterest, nil
 }
@@ -303,6 +310,7 @@ func (e *Endorser) preProcess(up *UnpackedProposal, channel *Channel) error {
 // clients are expected to look at the ProposalResponse response status code (e.g. 500) and message.
 func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedProposal) (*pb.ProposalResponse, error) {
 	// start time for computing elapsed time metric for successfully endorsed proposals
+	// log.Fatal("Endorser ProcessProposal")
 	startTime := time.Now()
 	e.Metrics.ProposalsReceived.Add(1)
 
@@ -367,6 +375,23 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 }
 
 func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb.ProposalResponse, error) {
+	startTime := time.Now()
+
+	// if error, capture endorsement failure metric
+	meterLabels := []string{
+		"channel", up.ChannelID(),
+		"chaincode", up.ChaincodeName,
+	}
+
+	// meterLabels := []string{
+	// 	"channel", up.ChannelHeader.ChannelId,
+	// 	"chaincode", up.ChaincodeName,
+	// }
+
+	defer func() {
+		e.Metrics.ProcessProposal.With(meterLabels...).Observe(time.Since(startTime).Seconds())
+	}()
+
 	txParams := &ccprovider.TransactionParams{
 		ChannelID:  up.ChannelHeader.ChannelId,
 		TxID:       up.ChannelHeader.TxId,
@@ -389,7 +414,10 @@ func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb
 		// add the following defer statement and is useful when an error occur. Note that calling
 		// txsim.Done() more than once does not cause any issue. If the txsim is already
 		// released, the following txsim.Done() simply returns.
-		defer txSim.Done()
+		defer func() {
+			txSim.Done()
+
+		}()
 
 		hqe, err := e.Support.GetHistoryQueryExecutor(up.ChannelID())
 		if err != nil {
@@ -400,10 +428,15 @@ func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb
 		txParams.HistoryQueryExecutor = hqe
 	}
 
+	e.Metrics.ProcessProposalAcquireTxSimulator.With(meterLabels...).Observe(time.Since(startTime).Seconds())
+	start1 := time.Now()
 	cdLedger, err := e.Support.ChaincodeEndorsementInfo(up.ChannelID(), up.ChaincodeName, txParams.TXSimulator)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "make sure the chaincode %s has been successfully defined on channel %s and try again", up.ChaincodeName, up.ChannelID())
 	}
+	e.Metrics.ProcessProposalEndoresementInfo.With(meterLabels...).Observe(time.Since(start1).Seconds())
+
+	start1 = time.Now()
 
 	// 1 -- simulate
 	res, simulationResult, ccevent, ccInterest, err := e.simulateProposal(txParams, up.ChaincodeName, up.Input)
@@ -416,6 +449,10 @@ func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb
 		return nil, errors.Wrap(err, "failed to marshal chaincode event")
 	}
 
+	e.Metrics.ProcessProposalSimulateProposal.With(meterLabels...).Observe(time.Since(start1).Seconds())
+
+	start1 = time.Now()
+
 	prpBytes, err := protoutil.GetBytesProposalResponsePayload(up.ProposalHash, res, simulationResult, cceventBytes, &pb.ChaincodeID{
 		Name:    up.ChaincodeName,
 		Version: cdLedger.Version,
@@ -425,11 +462,7 @@ func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb
 		return nil, errors.WithMessage(err, "failed to create the proposal response")
 	}
 
-	// if error, capture endorsement failure metric
-	meterLabels := []string{
-		"channel", up.ChannelID(),
-		"chaincode", up.ChaincodeName,
-	}
+	e.Metrics.ProcessProposalResponsePayload.With(meterLabels...).Observe(time.Since(start1).Seconds())
 
 	switch {
 	case res.Status >= shim.ERROR:

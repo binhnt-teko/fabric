@@ -36,6 +36,7 @@ type EndorserServerAdapter struct {
 }
 
 func (e *EndorserServerAdapter) ProcessProposal(ctx context.Context, req *peerproto.SignedProposal, _ ...grpc.CallOption) (*peerproto.ProposalResponse, error) {
+	logger.Fatal("===============EndorserServerAdapter ProcessProposal================")
 	return e.Server.ProcessProposal(ctx, req)
 }
 

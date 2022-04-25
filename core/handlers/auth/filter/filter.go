@@ -8,6 +8,7 @@ package filter
 
 import (
 	"context"
+	"log"
 
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/handlers/auth"
@@ -29,5 +30,6 @@ func (f *filter) Init(next peer.EndorserServer) {
 
 // ProcessProposal processes a signed proposal
 func (f *filter) ProcessProposal(ctx context.Context, signedProp *peer.SignedProposal) (*peer.ProposalResponse, error) {
+	log.Fatal("===============filter filter auth ProcessProposal================")
 	return f.next.ProcessProposal(ctx, signedProp)
 }

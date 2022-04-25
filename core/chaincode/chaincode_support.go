@@ -158,6 +158,7 @@ func (cs *ChaincodeSupport) ExecuteLegacyInit(txParams *ccprovider.TransactionPa
 
 // Execute invokes chaincode and returns the original response.
 func (cs *ChaincodeSupport) Execute(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput) (*pb.Response, *pb.ChaincodeEvent, error) {
+
 	resp, err := cs.Invoke(txParams, chaincodeName, input)
 	return processChaincodeExecutionResult(txParams.TxID, chaincodeName, resp, err)
 }
@@ -195,17 +196,28 @@ func processChaincodeExecutionResult(txid, ccName string, resp *pb.ChaincodeMess
 // Invoke will invoke chaincode and return the message containing the response.
 // The chaincode will be launched if it is not already running.
 func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput) (*pb.ChaincodeMessage, error) {
+	start := time.Now()
+	meterLabels := []string{
+		"channel", txParams.ChannelID,
+		"chaincode", chaincodeName,
+	}
 	ccid, cctype, err := cs.CheckInvocation(txParams, chaincodeName, input)
 	if err != nil {
 		return nil, errors.WithMessage(err, "invalid invocation")
 	}
+	cs.HandlerMetrics.ChaincodeCheckInvocation.With(meterLabels...).Observe(time.Since(start).Seconds())
 
+	start = time.Now()
 	h, err := cs.Launch(ccid)
 	if err != nil {
 		return nil, err
 	}
+	cs.HandlerMetrics.ChaincodeLaunch.With(meterLabels...).Observe(time.Since(start).Seconds())
 
-	return cs.execute(cctype, txParams, chaincodeName, input, h)
+	start = time.Now()
+	res, err := cs.execute(cctype, txParams, chaincodeName, input, h)
+	cs.HandlerMetrics.ChaincodeExecute.With(meterLabels...).Observe(time.Since(start).Seconds())
+	return res, err
 }
 
 // CheckInvocation inspects the parameters of an invocation and determines if, how, and to where a that invocation should be routed.
