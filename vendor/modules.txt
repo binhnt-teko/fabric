@@ -383,6 +383,9 @@ github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.0.0-rc8
 ## explicit
 github.com/opencontainers/runc/libcontainer/user
+# github.com/orcaman/concurrent-map v1.0.0
+## explicit
+github.com/orcaman/concurrent-map
 # github.com/pelletier/go-toml v1.8.0
 ## explicit; go 1.12
 github.com/pelletier/go-toml

@@ -74,6 +74,79 @@ var (
 		LabelNames:   []string{"channel", "chaincode"},
 		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
 	}
+
+	// Luat metrics for process proposal successfully or error func: ProcessProposalSuccessfullyOrError
+	processProposalSuccessfullyOrErrorHistogramOpts = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalAcquireTxSimulator = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_acquire_tx_simulator",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalEndoresementInfo = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_endoresement_info",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalSimulateProposal = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_simulate_proposal",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalResponsePayload = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_response_payload",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalSimulateProposalCallChaincode = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_call_chaincode",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalSimulateProposalCheckResult = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_check_result",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalSimulateProposalReturnResult = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_return_result",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
+
+	processProposalExecuteChaincode = metrics.HistogramOpts{
+		Namespace:    "endorser",
+		Name:         "process_proposal_execute_chaincode",
+		Help:         "The time to complete a process proposal.",
+		LabelNames:   []string{"channel", "chaincode"},
+		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}",
+	}
 )
 
 type Metrics struct {
@@ -86,6 +159,18 @@ type Metrics struct {
 	EndorsementsFailed       metrics.Counter
 	DuplicateTxsFailure      metrics.Counter
 	SimulationFailure        metrics.Counter
+
+	// Luat : add metrics
+	ProcessProposal                   metrics.Histogram
+	ProcessProposalAcquireTxSimulator metrics.Histogram
+	ProcessProposalEndoresementInfo   metrics.Histogram
+	ProcessProposalSimulateProposal   metrics.Histogram
+	ProcessProposalResponsePayload    metrics.Histogram
+
+	ProcessProposalSimulateProposalCallChaincode metrics.Histogram
+	ProcessProposalSimulateProposalCheckResult   metrics.Histogram
+	ProcessProposalSimulateProposalReturnResult  metrics.Histogram
+	ProcessProposalExecuteChaincode              metrics.Histogram
 }
 
 func NewMetrics(p metrics.Provider) *Metrics {
@@ -99,5 +184,17 @@ func NewMetrics(p metrics.Provider) *Metrics {
 		EndorsementsFailed:       p.NewCounter(endorsementFailureCounterOpts),
 		DuplicateTxsFailure:      p.NewCounter(duplicateTxsFailureCounterOpts),
 		SimulationFailure:        p.NewCounter(simulationFailureCounterOpts),
+
+		// Luat : add metrics
+		ProcessProposal:                   p.NewHistogram(processProposalSuccessfullyOrErrorHistogramOpts),
+		ProcessProposalAcquireTxSimulator: p.NewHistogram(processProposalAcquireTxSimulator),
+		ProcessProposalEndoresementInfo:   p.NewHistogram(processProposalEndoresementInfo),
+		ProcessProposalSimulateProposal:   p.NewHistogram(processProposalSimulateProposal),
+		ProcessProposalResponsePayload:    p.NewHistogram(processProposalResponsePayload),
+
+		ProcessProposalSimulateProposalCallChaincode: p.NewHistogram(processProposalSimulateProposalCallChaincode),
+		ProcessProposalSimulateProposalCheckResult:   p.NewHistogram(processProposalSimulateProposalCheckResult),
+		ProcessProposalSimulateProposalReturnResult:  p.NewHistogram(processProposalSimulateProposalReturnResult),
+		ProcessProposalExecuteChaincode:              p.NewHistogram(processProposalExecuteChaincode),
 	}
 }

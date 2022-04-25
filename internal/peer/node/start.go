@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -193,6 +194,7 @@ func serve(args []string) error {
 	// Idemix does not support this *YET* but it can be easily
 	// fixed to support it. For now, we just make sure that
 	// the peer only comes up with the standard MSP
+	logger.Info("This peer was be modified")
 	mspType := mgmt.GetLocalMSP(factory.GetDefault()).GetType()
 	if mspType != msp.FABRIC {
 		panic("Unsupported msp type " + msp.ProviderTypeToString(mspType))
@@ -891,10 +893,11 @@ func serve(args []string) error {
 	}
 
 	// start the peer server
-	auth := authHandler.ChainFilters(serverEndorser, authFilters...)
+	// Luat
+	// auth := authHandler.ChainFilters(serverEndorser, authFilters...)
 	// Register the Endorser server
-	pb.RegisterEndorserServer(peerServer.Server(), auth)
-
+	pb.RegisterEndorserServer(peerServer.Server(), serverEndorser)
+	logger.Info("Register Endorser server")
 	// register the snapshot server
 	snapshotSvc := &snapshotgrpc.SnapshotService{LedgerGetter: peerInstance, ACLProvider: aclProvider}
 	pb.RegisterSnapshotServer(peerServer.Server(), snapshotSvc)
@@ -1399,6 +1402,7 @@ func (r *reset) Init(next pb.EndorserServer) {
 
 // ProcessProposal processes a signed proposal.
 func (r *reset) ProcessProposal(ctx context.Context, signedProp *pb.SignedProposal) (*pb.ProposalResponse, error) {
+	log.Fatal("============Reset ProcessProposal===========")
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	if r.reject {

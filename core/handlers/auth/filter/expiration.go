@@ -8,6 +8,7 @@ package filter
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/hyperledger/fabric-protos-go/peer"
@@ -55,6 +56,7 @@ func validateProposal(signedProp *peer.SignedProposal) error {
 
 // ProcessProposal processes a signed proposal
 func (f *expirationCheckFilter) ProcessProposal(ctx context.Context, signedProp *peer.SignedProposal) (*peer.ProposalResponse, error) {
+	log.Fatal("===============expirationCheckFilter ProcessProposal================")
 	if err := validateProposal(signedProp); err != nil {
 		return nil, err
 	}
