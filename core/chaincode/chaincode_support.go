@@ -79,18 +79,25 @@ type ChaincodeSupport struct {
 // blocks until the peer side handler gets into ready state or encounters a fatal
 // error. If the chaincode is already running, it simply returns.
 func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
+	chaincodeLogger.Infof("Launch start chaincode %s", ccid)
+
 	if h := cs.HandlerRegistry.Handler(ccid); h != nil {
 		return h, nil
 	}
+	chaincodeLogger.Infof("call Launcher.Launch  %s", ccid)
 
 	if err := cs.Launcher.Launch(ccid, cs); err != nil {
+		chaincodeLogger.Infof("ChaincodeSupport.Launch: error  %s", err.Error())
+
 		return nil, errors.Wrapf(err, "could not launch chaincode %s", ccid)
 	}
+	chaincodeLogger.Infof("ChaincodeSupport.Launch: call HandlerRegistry.Handler  %s", ccid)
 
 	h := cs.HandlerRegistry.Handler(ccid)
 	if h == nil {
 		return nil, errors.Errorf("claimed to start chaincode container for %s but could not find handler", ccid)
 	}
+	chaincodeLogger.Infof("ChaincodeSupport.Launch: return handler of  %s", ccid)
 
 	return h, nil
 }
@@ -107,9 +114,14 @@ func (cs *ChaincodeSupport) LaunchInProc(ccid string) <-chan struct{} {
 
 // HandleChaincodeStream implements ccintf.HandleChaincodeStream for all vms to call with appropriate stream
 func (cs *ChaincodeSupport) HandleChaincodeStream(stream []ccintf.ChaincodeStream) error {
+	chaincodeLogger.Infof("ChaincodeSupport.HandleChaincodeStream: start streams")
+
 	var deserializerFactory privdata.IdentityDeserializerFactoryFunc = func(channelID string) msp.IdentityDeserializer {
 		return cs.Peer.Channel(channelID).MSPManager()
 	}
+
+	chaincodeLogger.Infof("ChaincodeSupport.HandleChaincodeStream: create hander")
+
 	handler := &Handler{
 		Invoker:                cs,
 		Keepalive:              cs.Keepalive,
@@ -128,6 +140,7 @@ func (cs *ChaincodeSupport) HandleChaincodeStream(stream []ccintf.ChaincodeStrea
 		TotalQueryLimit:        cs.TotalQueryLimit,
 	}
 
+	chaincodeLogger.Infof("ChaincodeSupport.HandleChaincodeStream: call handler.ProcessStream")
 	return handler.ProcessStream(stream)
 }
 
@@ -199,6 +212,7 @@ func processChaincodeExecutionResult(txid, ccName string, resp *pb.ChaincodeMess
 // Invoke will invoke chaincode and return the message containing the response.
 // The chaincode will be launched if it is not already running.
 func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput) (*pb.ChaincodeMessage, error) {
+	chaincodeLogger.Infof("ChaincodeSupport.Invoke: start ")
 	start := time.Now()
 	meterLabels := []string{
 		"channel", txParams.ChannelID,
@@ -211,6 +225,7 @@ func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chain
 	cs.HandlerMetrics.ChaincodeCheckInvocation.With(meterLabels...).Observe(time.Since(start).Seconds())
 
 	start = time.Now()
+	chaincodeLogger.Infof("ChaincodeSupport.Invoke: call Launch to get handler ")
 	h, err := cs.Launch(ccid)
 	if err != nil {
 		return nil, err
@@ -218,6 +233,7 @@ func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chain
 	cs.HandlerMetrics.ChaincodeLaunch.With(meterLabels...).Observe(time.Since(start).Seconds())
 
 	start = time.Now()
+	chaincodeLogger.Infof("ChaincodeSupport.Invoke: call execute ")
 	res, err := cs.execute(cctype, txParams, chaincodeName, input, h)
 	cs.HandlerMetrics.ChaincodeExecute.With(meterLabels...).Observe(time.Since(start).Seconds())
 	return res, err
@@ -228,7 +244,7 @@ func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chain
 // Then, if the chaincode definition requires it, this function enforces 'init exactly once' semantics.
 // Finally, it returns the chaincode ID to route to and the message type of the request (normal transaction, or init).
 func (cs *ChaincodeSupport) CheckInvocation(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput) (ccid string, cctype pb.ChaincodeMessage_Type, err error) {
-	chaincodeLogger.Debugf("[%s] getting chaincode data for %s on channel %s", shorttxid(txParams.TxID), chaincodeName, txParams.ChannelID)
+	chaincodeLogger.Infof("[%s] getting chaincode data for %s on channel %s", shorttxid(txParams.TxID), chaincodeName, txParams.ChannelID)
 	cii, err := cs.Lifecycle.ChaincodeEndorsementInfo(txParams.ChannelID, chaincodeName, txParams.TXSimulator)
 	if err != nil {
 		logDevModeError(cs.UserRunsCC)
@@ -275,6 +291,8 @@ func (cs *ChaincodeSupport) CheckInvocation(txParams *ccprovider.TransactionPara
 
 // execute executes a transaction and waits for it to complete until a timeout value.
 func (cs *ChaincodeSupport) execute(cctyp pb.ChaincodeMessage_Type, txParams *ccprovider.TransactionParams, namespace string, input *pb.ChaincodeInput, h *Handler) (*pb.ChaincodeMessage, error) {
+	chaincodeLogger.Infof("ChaincodeSupport.execute: execute start %+v", namespace)
+
 	input.Decorations = txParams.ProposalDecorations
 
 	payload, err := proto.Marshal(input)
@@ -290,6 +308,8 @@ func (cs *ChaincodeSupport) execute(cctyp pb.ChaincodeMessage_Type, txParams *cc
 	}
 
 	timeout := cs.executeTimeout(namespace, input)
+	chaincodeLogger.Infof("ChaincodeSupport.execute: call handler.execute %+v", namespace)
+
 	ccresp, err := h.Execute(txParams, namespace, ccMsg, timeout)
 	if err != nil {
 		return nil, errors.WithMessage(err, "error sending")

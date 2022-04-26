@@ -111,7 +111,7 @@ func Main() {
 		ordererRootCAsByChain: make(map[string][][]byte),
 		clientRootCAs:         serverConfig.SecOpts.ClientRootCAs,
 	}
-
+	//Binhnt: Create new ledger
 	lf, err := createLedgerFactory(conf, metricsProvider)
 	if err != nil {
 		logger.Panicf("Failed to create ledger factory: %v", err)
@@ -242,6 +242,7 @@ func Main() {
 		}
 	}
 
+	//binhnt: Create blockchain manager
 	manager := initializeMultichannelRegistrar(
 		clusterBootBlock,
 		repInitiator,
@@ -802,6 +803,8 @@ func initializeMultichannelRegistrar(
 	bccsp bccsp.BCCSP,
 	callbacks ...channelconfig.BundleActor,
 ) *multichannel.Registrar {
+
+	//Binhnt: Create new Registrator
 	registrar := multichannel.NewRegistrar(*conf, lf, signer, metricsProvider, bccsp, clusterDialer, callbacks...)
 
 	consenters := map[string]consensus.Consenter{}

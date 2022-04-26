@@ -68,17 +68,23 @@ func (r *RuntimeLauncher) ChaincodeClientInfo(ccid string) (*ccintf.PeerConnecti
 }
 
 func (r *RuntimeLauncher) Launch(ccid string, streamHandler extcc.StreamHandler) error {
+	chaincodeLogger.Infof("RuntimeLauncher.Launch start chaincode : %s", ccid)
 	var startFailCh chan error
 	var timeoutCh <-chan time.Time
 
 	startTime := time.Now()
+	chaincodeLogger.Infof("RuntimeLauncher.Launch call registry launch")
 	launchState, alreadyStarted := r.Registry.Launching(ccid)
 	if !alreadyStarted {
+		chaincodeLogger.Infof("RuntimeLauncher.Launch not start call build ccid ")
+
 		startFailCh = make(chan error, 1)
 		timeoutCh = time.NewTimer(r.StartupTimeout).C
 
 		go func() {
 			// go through the build process to obtain connecion information
+			chaincodeLogger.Infof("RuntimeLauncher.Launch:  call Runtime.Build: %s", ccid)
+
 			ccservinfo, err := r.Runtime.Build(ccid)
 			if err != nil {
 				startFailCh <- errors.WithMessage(err, "error building chaincode")
@@ -87,17 +93,23 @@ func (r *RuntimeLauncher) Launch(ccid string, streamHandler extcc.StreamHandler)
 
 			// chaincode server model indicated... proceed to connect to CC
 			if ccservinfo != nil {
+				chaincodeLogger.Infof("RuntimeLauncher.Launch call external server chaincode: %+v", ccservinfo)
+
 				if err = r.ConnectionHandler.Stream(ccid, ccservinfo, streamHandler); err != nil {
+					chaincodeLogger.Errorf("RuntimeLauncher.Launch call ConnectionHandler.Stream faield: %+v", ccservinfo)
+
 					startFailCh <- errors.WithMessagef(err, "connection to %s failed", ccid)
 					return
 				}
 
-				launchState.Notify(errors.Errorf("connection to %s terminated", ccid))
+				launchState.Notify(errors.Errorf("connection to %s terminated ", ccid))
 				return
 			}
 
 			// default peer-as-server model... compute connection information for CC callback
 			// and proceed to launch chaincode
+
+			chaincodeLogger.Infof("RuntimeLauncher.Launch:  call ChaincodeClientInfo: %s", ccid)
 			ccinfo, err := r.ChaincodeClientInfo(ccid)
 			if err != nil {
 				startFailCh <- errors.WithMessage(err, "could not get connection info")
@@ -107,35 +119,51 @@ func (r *RuntimeLauncher) Launch(ccid string, streamHandler extcc.StreamHandler)
 				startFailCh <- errors.New("could not get connection info")
 				return
 			}
+			chaincodeLogger.Infof("RuntimeLauncher.Launch:  call Runtime.Start: %s", ccid)
+
 			if err = r.Runtime.Start(ccid, ccinfo); err != nil {
 				startFailCh <- errors.WithMessage(err, "error starting container")
 				return
 			}
+
+			chaincodeLogger.Infof("RuntimeLauncher.Launch:  call Runtime.Wait: %s", ccid)
 			exitCode, err := r.Runtime.Wait(ccid)
 			if err != nil {
 				launchState.Notify(errors.Wrap(err, "failed to wait on container exit"))
 			}
 			launchState.Notify(errors.Errorf("container exited with %d", exitCode))
 		}()
+	} else {
+		chaincodeLogger.Infof("RuntimeLauncher.Launch: alreadyStarted=true start")
 	}
+	chaincodeLogger.Info("Check error...")
 
 	var err error
 	select {
 	case <-launchState.Done():
+		chaincodeLogger.Info("chaincode registration failed with %s", launchState.Err())
+
 		err = errors.WithMessage(launchState.Err(), "chaincode registration failed")
 	case err = <-startFailCh:
+		chaincodeLogger.Info("chaincode startFailCh ")
+
 		launchState.Notify(err)
+
 		r.Metrics.LaunchFailures.With("chaincode", ccid).Add(1)
 	case <-timeoutCh:
+		chaincodeLogger.Infof("timeout expired while starting chaincode %s for transaction", ccid)
+
 		err = errors.Errorf("timeout expired while starting chaincode %s for transaction", ccid)
 		launchState.Notify(err)
 		r.Metrics.LaunchTimeouts.With("chaincode", ccid).Add(1)
 	}
 
+	chaincodeLogger.Info("Check alreadyStarted...")
+
 	success := true
 	if err != nil && !alreadyStarted {
 		success = false
-		chaincodeLogger.Debugf("stopping due to error while launching: %+v", err)
+		chaincodeLogger.Errorf("stopping due to error while launching: %+v", err)
 		defer r.Registry.Deregister(ccid)
 	}
 
@@ -144,7 +172,7 @@ func (r *RuntimeLauncher) Launch(ccid string, streamHandler extcc.StreamHandler)
 		"success", strconv.FormatBool(success),
 	).Observe(time.Since(startTime).Seconds())
 
-	chaincodeLogger.Debug("launch complete")
+	chaincodeLogger.Info("launch complete")
 	return err
 }
 

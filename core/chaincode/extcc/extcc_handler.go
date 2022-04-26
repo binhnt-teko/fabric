@@ -41,10 +41,11 @@ func (i *ExternalChaincodeRuntime) createConnection(ccid string, ccinfo *ccintf.
 }
 
 func (i *ExternalChaincodeRuntime) Stream(ccid string, ccinfo *ccintf.ChaincodeServerInfo, sHandler StreamHandler) error {
-	extccLogger.Debugf("Starting external chaincode connection: %s", ccid)
+	extccLogger.Infof("Starting external chaincode connection: %s", ccid)
 	conns := []*grpc.ClientConn{}
 
 	streams := []ccintf.ChaincodeStream{}
+
 	for threadId := 0; threadId < 10; threadId++ {
 		conn, err := i.createConnection(ccid, ccinfo)
 		if err != nil {
@@ -70,7 +71,7 @@ func (i *ExternalChaincodeRuntime) Stream(ccid string, ccinfo *ccintf.ChaincodeS
 	// peer as client has to initiate the stream. Rest of the process is unchanged
 	sHandler.HandleChaincodeStream(streams)
 
-	extccLogger.Debugf("External chaincode %s client exited", ccid)
+	extccLogger.Infof("External chaincode %s client exited", ccid)
 
 	return nil
 }

@@ -156,7 +156,7 @@ type Handler struct {
 
 // handleMessage is called by ProcessStream to dispatch messages.
 func (h *Handler) handleMessage(msg *pb.ChaincodeMessage) error {
-	chaincodeLogger.Debugf("[%s] Fabric side handling ChaincodeMessage of type: %s in state %s", shorttxid(msg.Txid), msg.Type, h.state)
+	chaincodeLogger.Infof("handleMessage: [%s] Fabric side handling ChaincodeMessage of type: %s in state %s", shorttxid(msg.Txid), msg.Type, h.state)
 
 	if msg.Type == pb.ChaincodeMessage_KEEPALIVE {
 		return nil
@@ -183,9 +183,10 @@ func (h *Handler) handleMessageCreatedState(msg *pb.ChaincodeMessage) error {
 }
 
 func (h *Handler) handleMessageReadyState(msg *pb.ChaincodeMessage) error {
-
+	chaincodeLogger.Infof("handleMessageReadyState: Process mesage  %+v", msg)
 	switch msg.Type {
 	case pb.ChaincodeMessage_COMPLETED, pb.ChaincodeMessage_ERROR:
+		chaincodeLogger.Infof("handleMessageReadyState: pb.ChaincodeMessage_COMPLETED, pb.ChaincodeMessage_ERROR  %+v", msg)
 		h.Notify(msg)
 
 	case pb.ChaincodeMessage_PUT_STATE:
@@ -319,7 +320,7 @@ func (h *Handler) serialSend(index int, msg *pb.ChaincodeMessage) error {
 	startTime := time.Now()
 	if err := h.chatStream[index].Send(msg); err != nil {
 		err = errors.WithMessagef(err, "[%s] error sending %s", shorttxid(msg.Txid), msg.Type)
-		chaincodeLogger.Errorf("%+v", err)
+		chaincodeLogger.Errorf("Error sending msg: %+v", err)
 		return err
 	}
 	h.Metrics.ChaincodeProposalTransactionSendTime.With(labels...).Observe(time.Since(startTime).Seconds())
@@ -387,18 +388,22 @@ func (h *Handler) ProcessStream(streams []ccintf.ChaincodeStream) error {
 	h.errChan = make(chan error, 1)
 
 	//Binhnt: start multi thread to process request from chaincode
-	// wg := sync.WaitGroup{}
-	h.streamIndex = 0
+	wg := sync.WaitGroup{}
+	// h.streamIndex = 0
 	h.serialLock = make([]sync.Mutex, len(h.chatStream))
 	for index, stream := range h.chatStream {
 		h.serialLock[index] = sync.Mutex{} //Init lock for each stream
-		// wg.Add(1)
-		go func(index int, stream ccintf.ChaincodeStream) error {
-			// defer wg.Done()
-			return h.ProcessOneStream(index, stream)
+		wg.Add(1)
+		go func(index int, stream ccintf.ChaincodeStream) {
+			defer wg.Done()
+			chaincodeLogger.Infof("ProcessStream: start thead %d for ProcessOneStream ", index)
+			h.ProcessOneStream(index, stream)
+
+			chaincodeLogger.Infof("ProcessStream: end thead %d for ProcessOneStream ", index)
+
 		}(index, stream)
 	}
-	// wg.Wait()
+	wg.Wait()
 	return nil
 }
 
@@ -413,6 +418,8 @@ func (h *Handler) GetStreamRR() int {
 	return h.streamIndex
 }
 func (h *Handler) ProcessOneStream(index int, stream ccintf.ChaincodeStream) error {
+	chaincodeLogger.Infof("ProcessOneStream: start in thread %d", index)
+
 	var keepaliveCh <-chan time.Time
 	if h.Keepalive != 0 {
 		ticker := time.NewTicker(h.Keepalive)
@@ -437,24 +444,26 @@ func (h *Handler) ProcessOneStream(index int, stream ccintf.ChaincodeStream) err
 	for {
 		select {
 		case rmsg := <-msgAvail:
+			chaincodeLogger.Infof("ProcessOneStream: thread [%d] rmsg: %+v", index, rmsg)
+
 			switch {
 			// Defer the deregistering of the this handler.
 			case rmsg.err == io.EOF:
-				chaincodeLogger.Debugf("received EOF, ending chaincode support stream: %s", rmsg.err)
+				chaincodeLogger.Errorf("ProcessOneStream: thread [%d] received EOF, ending chaincode support stream: %s", index, rmsg.err)
 				return rmsg.err
 			case rmsg.err != nil:
 				err := errors.Wrap(rmsg.err, "receive from chaincode support stream failed")
-				chaincodeLogger.Debugf("%+v", err)
+				chaincodeLogger.Errorf("ProcessOneStream::  thread [%d] receive rmsg.err: %+v", index, err)
 				return err
 			case rmsg.msg == nil:
 				err := errors.New("received nil message, ending chaincode support stream")
-				chaincodeLogger.Debugf("%+v", err)
+				chaincodeLogger.Errorf(" ProcessOneStream::  thread [%d] %+v", index, err)
 				return err
 			default:
 				err := h.handleMessage(rmsg.msg)
 				if err != nil {
 					err = errors.WithMessage(err, "error handling message, ending stream")
-					chaincodeLogger.Errorf("[%s] %+v", shorttxid(rmsg.msg.Txid), err)
+					chaincodeLogger.Errorf(" ProcessOneStream:: thread [%d] error in handleMessage:  [%s] %+v", index, shorttxid(rmsg.msg.Txid), err)
 					return err
 				}
 
@@ -463,7 +472,7 @@ func (h *Handler) ProcessOneStream(index int, stream ccintf.ChaincodeStream) err
 
 		case sendErr := <-h.errChan:
 			err := errors.Wrapf(sendErr, "received error while sending message, ending chaincode support stream")
-			chaincodeLogger.Errorf("%s", err)
+			chaincodeLogger.Errorf("ProcessOneStream::  thread [%d] : %s", index, err)
 			return err
 		case <-keepaliveCh:
 			// if no error message from serialSend, KEEPALIVE happy, and don't care about error
@@ -476,12 +485,11 @@ func (h *Handler) ProcessOneStream(index int, stream ccintf.ChaincodeStream) err
 
 // sendReady sends READY to chaincode serially (just like REGISTER)
 func (h *Handler) sendReady() error {
-	chaincodeLogger.Debugf("sending READY for chaincode %s", h.chaincodeID)
+	chaincodeLogger.Infof("sending READY for chaincode %s", h.chaincodeID)
 	ccMsg := &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_READY}
 
 	// if error in sending tear down the h
-	index := h.GetStreamRR()
-	if err := h.serialSend(index, ccMsg); err != nil {
+	if err := h.serialSend(0, ccMsg); err != nil {
 		chaincodeLogger.Errorf("error sending READY (%s) for chaincode %s", err, h.chaincodeID)
 		return err
 	}
@@ -511,7 +519,7 @@ func (h *Handler) notifyRegistry(err error) {
 
 // handleRegister is invoked when chaincode tries to register.
 func (h *Handler) HandleRegister(msg *pb.ChaincodeMessage) {
-	chaincodeLogger.Debugf("Received %s in state %s", msg.Type, h.state)
+	chaincodeLogger.Infof("Received %s in state %s", msg.Type, h.state)
 	chaincodeID := &pb.ChaincodeID{}
 	err := proto.Unmarshal(msg.Payload, chaincodeID)
 	if err != nil {
@@ -535,8 +543,7 @@ func (h *Handler) HandleRegister(msg *pb.ChaincodeMessage) {
 	}
 
 	chaincodeLogger.Debugf("Got %s for chaincodeID = %s, sending back %s", pb.ChaincodeMessage_REGISTER, h.chaincodeID, pb.ChaincodeMessage_REGISTERED)
-	index := h.GetStreamRR()
-	if err := h.serialSend(index, &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTERED}); err != nil {
+	if err := h.serialSend(0, &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTERED}); err != nil {
 		chaincodeLogger.Errorf("error sending %s: %s", pb.ChaincodeMessage_REGISTERED, err)
 		h.notifyRegistry(err)
 		return
@@ -544,7 +551,7 @@ func (h *Handler) HandleRegister(msg *pb.ChaincodeMessage) {
 
 	h.state = Established
 
-	chaincodeLogger.Debugf("Changed state to established for %s", h.chaincodeID)
+	chaincodeLogger.Infof("Changed state to established for %s", h.chaincodeID)
 
 	// for dev mode this will also move to ready automatically
 	h.notifyRegistry(nil)
@@ -569,7 +576,7 @@ func (h *Handler) Notify(msg *pb.ChaincodeMessage) {
 	h.Metrics.ChaincodeProposalTransactionGetContext.With(labels...).Observe(time.Since(startTime).Seconds())
 
 	startTime = time.Now()
-	chaincodeLogger.Debugf("[%s] notifying Txid:%s, channelID:%s", shorttxid(msg.Txid), msg.Txid, msg.ChannelId)
+	chaincodeLogger.Infof("[%s] notifying Txid:%s, channelID:%s", shorttxid(msg.Txid), msg.Txid, msg.ChannelId)
 	tctx.ResponseNotifier <- msg
 
 	tctx.CloseQueryIterators()
@@ -1220,6 +1227,8 @@ func (h *Handler) HandleInvokeChaincode(msg *pb.ChaincodeMessage, txContext *Tra
 }
 
 func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace string, msg *pb.ChaincodeMessage, timeout time.Duration) (*pb.ChaincodeMessage, error) {
+	chaincodeLogger.Infof("Handler.Execute: start %s", namespace)
+
 	start := time.Now()
 	meterLabels := []string{
 		"channel", txParams.ChannelID,
@@ -1238,6 +1247,7 @@ func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace stri
 	}
 	defer h.TXContexts.Delete(msg.ChannelId, msg.Txid)
 
+	chaincodeLogger.Infof("Handler.Execute: cal setChaincodeProposal")
 	if err := h.setChaincodeProposal(txParams.SignedProp, txParams.Proposal, msg); err != nil {
 		return nil, err
 	}
@@ -1254,7 +1264,10 @@ func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace stri
 		h.Metrics.ChaincodeProposalTransactionBeforeSendMap.Set(msg.Txid, start1)
 		h.Metrics.ChaincodeProposalTransactionCount.With(labels...).Add(1)
 	}
+
 	index := h.GetStreamRR()
+	chaincodeLogger.Infof("Handler.Execute: cal serialSendAsync with index: %d ", index)
+
 	h.serialSendAsync(index, msg)
 	var ccresp *pb.ChaincodeMessage
 	select {

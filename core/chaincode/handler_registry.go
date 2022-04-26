@@ -127,6 +127,8 @@ func (r *HandlerRegistry) Handler(ccid string) *Handler {
 // chaincode. An error will also be returned if the chaincode has not already
 // been "launched", and unsolicited registration is not allowed.
 func (r *HandlerRegistry) Register(h *Handler) error {
+	chaincodeLogger.Infof("start Register %s", h.chaincodeID)
+
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -143,7 +145,7 @@ func (r *HandlerRegistry) Register(h *Handler) error {
 
 	r.handlers[h.chaincodeID] = h
 
-	chaincodeLogger.Debugf("registered handler complete for chaincode %s", h.chaincodeID)
+	chaincodeLogger.Infof("registered handler complete for chaincode %s", h.chaincodeID)
 	return nil
 }
 
