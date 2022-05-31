@@ -1,6 +1,6 @@
 # NHS_Node
 
-**This branch forked from the tags v2.2.5**
+**This branch forked from the tag v2.2.5**
 
 # Hyperledger Fabric [![join the chat][rocketchat-image]][rocketchat-url]
 
