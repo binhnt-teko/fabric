@@ -213,6 +213,7 @@ func newHTTP2Client(connectCtx, ctx context.Context, addr TargetInfo, opts Conne
 			perRPCCreds = append(perRPCCreds, t)
 		}
 	}
+	
 	if transportCreds != nil {
 		scheme = "https"
 		conn, authInfo, err = transportCreds.ClientHandshake(connectCtx, addr.Authority, conn)

@@ -283,6 +283,7 @@ func (d *Deliverer) connect(seekInfoEnv *common.Envelope) (orderer.AtomicBroadca
 	if err != nil {
 		return nil, nil, nil, errors.WithMessage(err, "could not get orderer endpoints")
 	}
+	d.Logger.Infof("Deliverer.connect: using %+v", endpoint.CertPool)
 
 	conn, err := d.Dialer.Dial(endpoint.Address, endpoint.CertPool)
 	if err != nil {

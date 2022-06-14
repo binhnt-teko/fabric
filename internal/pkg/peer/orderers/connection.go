@@ -153,6 +153,7 @@ func (cs *ConnectionSource) Update(globalAddrs []string, orgs map[string]Orderer
 	for orgName, org := range orgs {
 		certPool := x509.NewCertPool()
 		for _, rootCert := range org.RootCerts {
+			cs.logger.Infof("Add rootCert: %+v", rootCert)
 			if hasOrgEndpoints {
 				if err := comm.AddPemToCertPool(rootCert, certPool); err != nil {
 					cs.logger.Warningf("Could not add orderer cert for org '%s' to cert pool: %s", orgName, err)

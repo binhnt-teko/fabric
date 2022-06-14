@@ -10,10 +10,11 @@ import (
 	"context"
 	"encoding/pem"
 	"fmt"
-	"github.com/hyperledger/fabric/orderer/common/types"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/hyperledger/fabric/orderer/common/types"
 
 	"code.cloudfoundry.org/clock"
 	"github.com/golang/protobuf/proto"
@@ -632,10 +633,11 @@ func (c *Chain) run() {
 			}
 
 			s.leader <- soft.Lead
-			if soft.Lead != c.raftID {
+			if soft.Lead != c.raftID { //binhnt: Not leader => no process
 				continue
 			}
 
+			//binhnt: Add to orderd
 			batches, pending, err := c.ordered(s.req)
 			if err != nil {
 				c.logger.Errorf("Failed to order message: %s", err)
@@ -710,7 +712,7 @@ func (c *Chain) run() {
 				}
 			}
 
-			c.apply(app.entries)
+			c.apply(app.entries) //binhnt: process message from raft
 
 			if c.justElected {
 				msgInflight := c.Node.lastIndex() > c.appliedIndex
@@ -970,6 +972,7 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 
 	var position int
 	for i := range ents {
+		//binhnt: process entry
 		switch ents[i].Type {
 		case raftpb.EntryNormal:
 			if len(ents[i].Data) == 0 {
