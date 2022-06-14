@@ -251,6 +251,9 @@ func (p *Peer) createChannel(
 	if err != nil {
 		return err
 	}
+	peerLogger.Infof("binhnt: peer.createChannel: chanConf: %+v, p.CryptoProvider: %+v", bundle, p.CryptoProvider)
+
+	peerLogger.Infof("binhnt: peer.createChannel: bundle: %+v", bundle)
 
 	capabilitiesSupportedOrPanic(bundle)
 
@@ -295,13 +298,13 @@ func (p *Peer) createChannel(
 		globalAddresses := bundle.ChannelConfig().OrdererAddresses()
 		orgAddresses := map[string]orderers.OrdererOrg{}
 		if ordererConfig, ok := bundle.OrdererConfig(); ok {
-			peerLogger.Infof("binhnt: ordererConfig: %+v", ordererConfig)
+			peerLogger.Infof("binhnt: peer.createChannel: ordererConfig: %+v", ordererConfig)
 
 			for orgName, org := range ordererConfig.Organizations() {
 				var certs [][]byte
 				certs = append(certs, org.MSP().GetTLSRootCerts()...)
 				certs = append(certs, org.MSP().GetTLSIntermediateCerts()...)
-				peerLogger.Infof("binhnt: orgName: %s, RootCerts: %+v", orgName, certs)
+				peerLogger.Infof("binhnt: orgName: %s, org.msp: %+v, RootCerts: %+v", orgName, org.MSP(), certs)
 
 				orgAddresses[orgName] = orderers.OrdererOrg{
 					Addresses: org.Endpoints(),
