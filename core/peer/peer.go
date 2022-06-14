@@ -295,10 +295,13 @@ func (p *Peer) createChannel(
 		globalAddresses := bundle.ChannelConfig().OrdererAddresses()
 		orgAddresses := map[string]orderers.OrdererOrg{}
 		if ordererConfig, ok := bundle.OrdererConfig(); ok {
+			peerLogger.Infof("binhnt: ordererConfig: %+v", ordererConfig)
+
 			for orgName, org := range ordererConfig.Organizations() {
 				var certs [][]byte
 				certs = append(certs, org.MSP().GetTLSRootCerts()...)
 				certs = append(certs, org.MSP().GetTLSIntermediateCerts()...)
+				peerLogger.Infof("binhnt: orgName: %s, RootCerts: %+v", orgName, certs)
 
 				orgAddresses[orgName] = orderers.OrdererOrg{
 					Addresses: org.Endpoints(),

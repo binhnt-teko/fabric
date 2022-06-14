@@ -435,8 +435,10 @@ func EndpointconfigFromConfigBlock(block *common.Block, bccsp bccsp.BCCSP) ([]En
 		return nil, errors.New("failed obtaining orderer config from bundle")
 	}
 
+	fmt.Printf("binhnt: Load config from block: ordererConfig: %+v", ordererConfig)
 	mspIDsToCACerts := make(map[string][][]byte)
 	var aggregatedTLSCerts [][]byte
+
 	for _, org := range ordererConfig.Organizations() {
 		// Validate that every orderer org has a corresponding MSP instance in the MSP Manager.
 		msp, exists := msps[org.MSPID()]
@@ -446,6 +448,8 @@ func EndpointconfigFromConfigBlock(block *common.Block, bccsp bccsp.BCCSP) ([]En
 
 		// Build a per org mapping of the TLS CA certs for this org,
 		// and aggregate all TLS CA certs into aggregatedTLSCerts to be used later on.
+		fmt.Printf("binhnt: Load config from block: ordererConfig: msp=%+v", msp)
+
 		var caCerts [][]byte
 		caCerts = append(caCerts, msp.GetTLSIntermediateCerts()...)
 		caCerts = append(caCerts, msp.GetTLSRootCerts()...)
