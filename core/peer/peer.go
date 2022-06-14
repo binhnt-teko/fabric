@@ -306,6 +306,8 @@ func (p *Peer) createChannel(
 				}
 			}
 		}
+
+		peerLogger.Infof("binhnt: Update %+v, %+v", globalAddresses, orgAddresses)
 		ordererSource.Update(globalAddresses, orgAddresses)
 	}
 
